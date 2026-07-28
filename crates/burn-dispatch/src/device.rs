@@ -109,11 +109,24 @@ impl DispatchDevice {
 /// A wrapper that enables automatic differentiation for a [`DispatchDevice`].
 ///
 /// Use [`DispatchDevice::autodiff`] to construct this type.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct AutodiffDevice {
     pub(crate) inner: Box<DispatchDevice>,
     pub(crate) checkpointing: CheckpointingStrategy,
 }
+
+#[cfg(feature = "autodiff")]
+impl PartialEq for AutodiffDevice {
+    fn eq(&self, other: &Self) -> bool {
+        // Only compare the underlying hardware device, not the checkpointing strategy.
+        // This prevents false device-mismatch panics when tensors with different
+        // checkpointing strategies (e.g. Balanced vs None) are used together.
+        self.inner == other.inner
+    }
+}
+
+#[cfg(feature = "autodiff")]
+impl Eq for AutodiffDevice {}
 
 #[cfg(feature = "autodiff")]
 impl AutodiffDevice {
