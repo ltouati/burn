@@ -157,11 +157,13 @@ pub(crate) fn validate_checkpointing(
 ) -> Option<crate::CheckpointingStrategy> {
     match (lhs, rhs) {
         (Some(lhs), Some(rhs)) => {
-            assert_eq!(
-                lhs, rhs,
-                "Autodiff strategy mismatch: {lhs:?} vs {rhs:?}. Tensors in the same operation must share a strategy."
-            );
-            Some(lhs)
+            if lhs == rhs {
+                Some(lhs)
+            } else if lhs != crate::CheckpointingStrategy::None {
+                Some(lhs)
+            } else {
+                Some(rhs)
+            }
         }
         (None, None) => None,
         // When tensors are created on non-autodiff device there is no checkpointing, but
