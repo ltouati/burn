@@ -676,8 +676,11 @@ impl AutodiffBackend for Dispatch {
                     crate::BackendTensor::Autodiff(Autodiff::<Remote>::from_inner(tensor.float())),
                 )))
             }
-            DispatchTensorKind::Autodiff(_) => {
-                panic!("Autodiff should not wrap an autodiff tensor.")
+            DispatchTensorKind::Autodiff(inner) => {
+                // Already autodiff-wrapped — return as-is (idempotent).
+                // This can happen when module buffer tensors flow through
+                // autodiff contexts during gradient checkpointing replay.
+                DispatchTensorKind::Autodiff(inner)
             }
         };
 

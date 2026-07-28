@@ -821,6 +821,52 @@ macro_rules! binary_float_arms {
                     $([$Backend, $cfg]),*
                 )
             },
+            // Mixed: lhs is Autodiff, rhs is plain backend — promote rhs
+            $(
+                #[cfg(all(feature = "autodiff", $cfg))]
+                ($crate::DispatchTensorKind::Autodiff(lhs_inner), $crate::DispatchTensorKind::$Backend($rhs_inner)) => {
+                    match *lhs_inner {
+                        $crate::DispatchTensorKind::$Backend($lhs_inner) => {
+                            with_autodiff_backend!($Backend, checkpointing, |B| {
+                                let $lhs_inner = $lhs_inner.autodiff();
+                                let $rhs_inner = $rhs_inner.float_to_autodiff();
+                                wrap_float!(
+                                    @wrap_autodiff
+                                    $kind,
+                                    $Backend,
+                                    checkpointing,
+                                    { $body }
+                                )
+                            })
+                        }
+                        #[allow(unreachable_patterns)]
+                        _ => panic!("The provided tensors are not on the same backend.")
+                    }
+                },
+            )*
+            // Mixed: lhs is plain backend, rhs is Autodiff — promote lhs
+            $(
+                #[cfg(all(feature = "autodiff", $cfg))]
+                ($crate::DispatchTensorKind::$Backend($lhs_inner), $crate::DispatchTensorKind::Autodiff(rhs_inner)) => {
+                    match *rhs_inner {
+                        $crate::DispatchTensorKind::$Backend($rhs_inner) => {
+                            with_autodiff_backend!($Backend, checkpointing, |B| {
+                                let $lhs_inner = $lhs_inner.float_to_autodiff();
+                                let $rhs_inner = $rhs_inner.autodiff();
+                                wrap_float!(
+                                    @wrap_autodiff
+                                    $kind,
+                                    $Backend,
+                                    checkpointing,
+                                    { $body }
+                                )
+                            })
+                        }
+                        #[allow(unreachable_patterns)]
+                        _ => panic!("The provided tensors are not on the same backend.")
+                    }
+                },
+            )*
             $(
                 #[cfg($cfg)]
                 ($crate::DispatchTensorKind::$Backend($lhs_inner), $crate::DispatchTensorKind::$Backend($rhs_inner)) => {
@@ -949,8 +995,76 @@ macro_rules! binary_float_arms {
                     })
                 }
             )*
-            #[cfg(feature = "autodiff")]
-            ($crate::DispatchTensorKind::Autodiff(..), _) | (_, $crate::DispatchTensorKind::Autodiff(..))  => unreachable!("Autodiff should not wrap an autodiff tensor."),
+            // Handle double-wrapped Autodiff tensors: unwrap the extra Autodiff layer
+            // and dispatch directly. This can happen when module buffer tensors
+            // (non-parameter Tensors) flow through autodiff contexts.
+            $(
+                #[cfg(all(feature = "autodiff", $cfg))]
+                ($crate::DispatchTensorKind::Autodiff(lhs_ad), $crate::DispatchTensorKind::Autodiff(rhs_ad)) if matches!(lhs_ad.as_ref(), $crate::DispatchTensorKind::$Backend(..)) => {
+                    match (*lhs_ad, *rhs_ad) {
+                        ($crate::DispatchTensorKind::$Backend($lhs_inner), $crate::DispatchTensorKind::$Backend($rhs_inner)) => {
+                            with_autodiff_backend!($Backend, $ckp_lhs, |B| {
+                                let $lhs_inner = $lhs_inner.$lhs_kind();
+                                let $rhs_inner = $rhs_inner.$rhs_kind();
+                                wrap_float!(
+                                    @wrap_autodiff
+                                    $kind,
+                                    $Backend,
+                                    $ckp_lhs,
+                                    { $body }
+                                )
+                            })
+                        }
+                        #[allow(unreachable_patterns)]
+                        _ => panic!("The provided tensors are not on the same backend.")
+                    }
+                },
+            )*
+            // Mixed in @autodiff: one is Autodiff-wrapped, the other is a plain backend
+            $(
+                #[cfg(all(feature = "autodiff", $cfg))]
+                ($crate::DispatchTensorKind::Autodiff(lhs_ad), $crate::DispatchTensorKind::$Backend($rhs_inner)) => {
+                    match *lhs_ad {
+                        $crate::DispatchTensorKind::$Backend($lhs_inner) => {
+                            with_autodiff_backend!($Backend, $ckp_lhs, |B| {
+                                let $lhs_inner = $lhs_inner.$lhs_kind();
+                                let $rhs_inner = $rhs_inner.float_to_autodiff();
+                                wrap_float!(
+                                    @wrap_autodiff
+                                    $kind,
+                                    $Backend,
+                                    $ckp_lhs,
+                                    { $body }
+                                )
+                            })
+                        }
+                        #[allow(unreachable_patterns)]
+                        _ => panic!("The provided tensors are not on the same backend.")
+                    }
+                },
+            )*
+            $(
+                #[cfg(all(feature = "autodiff", $cfg))]
+                ($crate::DispatchTensorKind::$Backend($lhs_inner), $crate::DispatchTensorKind::Autodiff(rhs_ad)) => {
+                    match *rhs_ad {
+                        $crate::DispatchTensorKind::$Backend($rhs_inner) => {
+                            with_autodiff_backend!($Backend, $ckp_rhs, |B| {
+                                let $lhs_inner = $lhs_inner.float_to_autodiff();
+                                let $rhs_inner = $rhs_inner.$rhs_kind();
+                                wrap_float!(
+                                    @wrap_autodiff
+                                    $kind,
+                                    $Backend,
+                                    $ckp_rhs,
+                                    { $body }
+                                )
+                            })
+                        }
+                        #[allow(unreachable_patterns)]
+                        _ => panic!("The provided tensors are not on the same backend.")
+                    }
+                },
+            )*
             #[allow(unreachable_patterns)]
             (lhs, rhs) => {
                 panic!(

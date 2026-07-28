@@ -94,7 +94,19 @@ impl<B: Backend> BackendTensor<B> {
     pub fn autodiff(self) -> FloatTensor<Autodiff<B>> {
         match self {
             BackendTensor::Autodiff(tensor) => tensor,
-            // NOTE: this is the panicking code reached in tensor.rs:74:18:
+            _ => unreachable!(),
+        }
+    }
+
+    #[cfg(feature = "autodiff")]
+    /// Returns an autodiff tensor primitive, wrapping a raw `Float` tensor
+    /// into a leaf `AutodiffTensor` if necessary. This enables mixed-backend
+    /// binary operations where one tensor is tracked (Autodiff) and the other
+    /// is an untracked module buffer.
+    pub fn float_to_autodiff(self) -> FloatTensor<Autodiff<B>> {
+        match self {
+            BackendTensor::Autodiff(tensor) => tensor,
+            BackendTensor::Float(tensor) => burn_autodiff::tensor::AutodiffTensor::new(tensor),
             _ => unreachable!(),
         }
     }
